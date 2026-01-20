@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Job Cracker by Montasir",
+  "description": "A comprehensive Bangladesh Government Job Preparation tool that uses Gemini AI to extract study notes, summaries, and practice MCQs from book photos.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
