@@ -40,7 +40,8 @@ const App: React.FC = () => {
     practice: false,
     flashcards: false,
     clarification: false,
-    moreBonus: false
+    moreBonus: false,
+    morePractice: false
   });
 
   const [selection, setSelection] = useState<{ text: string, x: number, y: number, fullSentence: string } | null>(null);
@@ -109,6 +110,39 @@ const App: React.FC = () => {
     }
   };
 
+  const handleGenerateMoreMCQs = async () => {
+    if (!state.ocrResult) return;
+    setLoadingStates(ls => ({ ...ls, morePractice: true }));
+    try {
+      const nextBatchNum = state.mcqBatches.length + 1;
+      const prevContext = state.mcqBatches.flatMap(b => b.questions.map(q => q.question)).join(" | ");
+      const result = await generateMCQBatch(state.ocrResult.ocrText, state.language, nextBatchNum, prevContext);
+      
+      if (result.questions.length > 0) {
+        const newBatch = {
+          batchNumber: nextBatchNum,
+          questions: result.questions,
+          coverageReport: result.coverageReport
+        };
+        setState(prev => ({
+          ...prev,
+          mcqBatches: [...prev.mcqBatches, newBatch],
+          currentQuestionIndex: 0,
+          examFinished: false,
+          userAnswers: {} // Optional: reset answers for the new batch
+        }));
+        setActiveBatchIndex(state.mcqBatches.length);
+      } else {
+        alert("No more unique questions could be generated for this text.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to generate more practice questions.");
+    } finally {
+      setLoadingStates(ls => ({ ...ls, morePractice: false }));
+    }
+  };
+
   const closeClarification = () => {
     setClarification(null);
     setSelection(null);
@@ -154,7 +188,7 @@ const App: React.FC = () => {
       currentQuestionIndex: 0 
     }));
     setActiveBatchIndex(0);
-    setLoadingStates({ ocr: true, notes: true, summary: true, practice: true, flashcards: true, clarification: false, moreBonus: false });
+    setLoadingStates({ ocr: true, notes: true, summary: true, practice: true, flashcards: true, clarification: false, moreBonus: false, morePractice: false });
 
     try {
       const ocrResult = await extractOCRAndSubject(state.images);
@@ -196,7 +230,7 @@ const App: React.FC = () => {
         processing: false, 
         error: error?.message || "Analysis failed. The images might be blurry or the server is busy." 
       }));
-      setLoadingStates({ ocr: false, notes: false, summary: false, practice: false, flashcards: false, clarification: false, moreBonus: false });
+      setLoadingStates({ ocr: false, notes: false, summary: false, practice: false, flashcards: false, clarification: false, moreBonus: false, morePractice: false });
     }
   };
 
@@ -538,7 +572,35 @@ const App: React.FC = () => {
                        </div>
                     ) : currentBatch ? (
                       <>
-                        <div className="border-b border-slate-100 pb-8 mb-10">
+                        <div className="flex justify-between items-center mb-10 border-b border-slate-100 pb-4">
+                          <div className="flex gap-2">
+                            {state.mcqBatches.map((b, i) => (
+                              <button 
+                                key={i} 
+                                onClick={() => { setActiveBatchIndex(i); setState(s => ({ ...s, currentQuestionIndex: 0 })); }}
+                                className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${activeBatchIndex === i ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}
+                              >
+                                BATCH {i + 1}
+                              </button>
+                            ))}
+                            <button 
+                              onClick={handleGenerateMoreMCQs} 
+                              disabled={loadingStates.morePractice}
+                              className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 text-white flex items-center gap-2 hover:bg-emerald-700 transition-all disabled:opacity-50"
+                            >
+                              {loadingStates.morePractice ? (
+                                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              ) : "+ 50 MORE"}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="border-b border-slate-100 pb-8 mb-10 relative">
+                          {loadingStates.morePractice && (
+                            <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-10 flex items-center justify-center rounded-2xl">
+                               <p className="font-black text-emerald-600 uppercase tracking-widest text-xs animate-bounce">Generating new batch...</p>
+                            </div>
+                          )}
                           <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-full mb-3 inline-block">Question {state.currentQuestionIndex + 1} of {totalInBatch}</span>
                           <h3 className="text-2xl md:text-3xl font-black text-slate-900 mt-2 leading-snug">{currentBatch.questions[state.currentQuestionIndex]?.question}</h3>
                         </div>

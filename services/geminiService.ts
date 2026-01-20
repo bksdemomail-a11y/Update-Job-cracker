@@ -172,13 +172,20 @@ export const generateMCQBatch = async (
   ocrText: string, 
   language: OutputLanguage, 
   batchNum: number, 
-  prevContext: string = ""
+  prevQuestions: string = ""
 ): Promise<{ questions: MCQQuestion[]; coverageReport: any }> => {
   const ai = getAI();
   const model = 'gemini-3-flash-preview';
-  const prompt = `Generate 50 MCQs for Batch ${batchNum} from OCR_TEXT: """${ocrText}"""
-  Language: ${language}. 
-  Rules: Exact 50 MCQs, JSON format, briefExplanation for each. Focus on unused facts: ${prevContext}`;
+  
+  const prompt = `Generate exactly 50 high-quality MCQs for Batch ${batchNum} from the provided OCR_TEXT: """${ocrText}"""
+  Language: ${language === OutputLanguage.BN ? 'Bengali' : 'English'}.
+  
+  Guidelines:
+  1. Each MCQ must be challenging and relevant for BCS, Bank, and Primary job exams in Bangladesh.
+  2. Provide 4 options (A, B, C, D) and specify the correctAnswer.
+  3. Include a briefExplanation for the answer.
+  4. DO NOT repeat these previously generated questions: """${prevQuestions.substring(0, 1000)}"""
+  5. If multiple batches are requested, focus on different parts of the text to ensure complete coverage.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -186,14 +193,52 @@ export const generateMCQBatch = async (
       contents: prompt,
       config: {
         responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            questions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.NUMBER },
+                  question: { type: Type.STRING },
+                  options: {
+                    type: Type.OBJECT,
+                    properties: {
+                      A: { type: Type.STRING },
+                      B: { type: Type.STRING },
+                      C: { type: Type.STRING },
+                      D: { type: Type.STRING },
+                    },
+                    required: ["A", "B", "C", "D"],
+                  },
+                  correctAnswer: { type: Type.STRING, description: "Must be one of 'A', 'B', 'C', or 'D'" },
+                  briefExplanation: { type: Type.STRING },
+                  sourceTag: { type: Type.STRING },
+                  covers: { type: Type.ARRAY, items: { type: Type.STRING } },
+                },
+                required: ["id", "question", "options", "correctAnswer", "briefExplanation"],
+              }
+            },
+            coverageReport: {
+              type: Type.OBJECT,
+              properties: {
+                usedFactsCount: { type: Type.NUMBER },
+                unusedFactsCount: { type: Type.NUMBER },
+                unusedFactsPreview: { type: Type.ARRAY, items: { type: Type.STRING } },
+              }
+            }
+          },
+          required: ["questions"],
+        }
       }
     });
 
     const data = parseJSONSafely(response.text || '{}');
-    const root = data.practice || data; // Handle both potential structures
     return {
-      questions: root.questions || [],
-      coverageReport: (root.endOfBatch?.coverageReport || root.coverageReport || { usedFactsCount: 0, unusedFactsCount: 0, unusedFactsPreview: [] })
+      questions: data.questions || [],
+      coverageReport: data.coverageReport || { usedFactsCount: 0, unusedFactsCount: 0, unusedFactsPreview: [] }
     };
   } catch (error) {
     console.error("Gemini MCQ Error:", error);
